@@ -1,23 +1,24 @@
-# 🧠 AwesomeWM – Dennis Hilk Edition
+# 🧠 Awesome
 
-> My custom AwesomeWM setup
+> My personal minimal **AwesomeWM** configuration – clean, fast, and made for Linux nerds.
 
+---
 
 ## 🐧 Features
 
-- Conky overlay with CPU / GPU / RAM stats
-- PipeWire audio (SPDIF delay fix ready)
-- Custom widgets:
-- CPU / RAM / GPU monitor
-- Autostart for picom, conky, and wallpaper
-- Fast setup with `install.sh`
+- Minimal, fast AwesomeWM setup  
+- Simple, dark theme with binary aesthetics  
+- Single wallpaper (`wallpaper.png`)  
+- Conky overlay for CPU / GPU / RAM stats  
+- PipeWire audio (works perfectly with SPDIF)  
+- Autostart for picom, conky, and wallpaper  
 
 ---
 
 ## ⚙️ Installation
 
 ```bash
-git clone https://github.com/dennishilk/awesome.git
-cd awesome
+git clone https://github.com/dennishilk/Awesome.git
+cd Awesome
 chmod +x install.sh
 ./install.sh
