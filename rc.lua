@@ -86,15 +86,40 @@ awful.screen.connect_for_each_screen(function(s)
     }
 end)
 
--- Keybindings
+-- ====================================================
+--  Keybindings - by Dennis Hilk
+-- ====================================================
+
+-- Modkey (Super / Windows key)
+modkey = "Mod4"
+
+-- Define global keybindings
 globalkeys = gears.table.join(
-    awful.key({ modkey,           }, "Return", function () awful.spawn(terminal) end,
-              {description = "open terminal", group = "launcher"}),
-    awful.key({ modkey, "Shift"   }, "r", awesome.restart,
-              {description = "reload awesome", group = "awesome"}),
-    awful.key({ modkey, "Shift"   }, "q", awesome.quit,
-              {description = "quit awesome", group = "awesome"})
+
+    -- Launch terminal
+    awful.key({ modkey }, "Return",
+        function()
+            awful.spawn(terminal or "alacritty")
+        end,
+        { description = "open terminal", group = "launcher" }),
+
+    -- Restart Awesome
+    awful.key({ modkey, "Shift" }, "r",
+        awesome.restart,
+        { description = "reload awesome", group = "awesome" }),
+
+    -- Quit Awesome
+    awful.key({ modkey, "Shift" }, "q",
+        awesome.quit,
+        { description = "quit awesome", group = "awesome" }),
+
+    -- Switch between layouts (Tile / Floating / Max)
+    awful.key({ modkey }, "space",
+        function()
+            awful.layout.inc(1)
+        end,
+        { description = "select next layout", group = "layout" })
 )
 
+-- Apply keybindings
 root.keys(globalkeys)
-
