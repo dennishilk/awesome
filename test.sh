@@ -1,23 +1,16 @@
 #!/bin/bash
 # =============================================================
-# 🧠 Debian 13 (Trixie) Setup Script
-# Btrfs + GRUB + Timeshift Autosnap + Zen Kernel + DWM + Wallpaper
-# with automatic repository fix
+# 🧠 Debian 13 (Trixie) Universal Setup
+# DWM + Zen Kernel + Wallpaper + GPU (NVIDIA/AMD/None)
 # Author: Dennis Hilk
 # License: MIT
 # =============================================================
 
 set -e
 
-echo "=== 🧩 1. Setze Debian-Repositories ==="
-# Erkenne Debian-Version (Bookworm oder Trixie)
+# --- Repos ----------------------------------------------------
+echo "=== 🧩 1. Debian-Repositories aktivieren ==="
 CODENAME=$(grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
-
-if [ -z "$CODENAME" ]; then
-  echo "❌ Konnte Debian-Version nicht bestimmen."
-  exit 1
-fi
-
 sudo bash -c "cat > /etc/apt/sources.list <<EOF
 deb http://deb.debian.org/debian ${CODENAME} main contrib non-free non-free-firmware
 deb http://deb.debian.org/debian ${CODENAME}-updates main contrib non-free non-free-firmware
@@ -25,55 +18,99 @@ deb http://security.debian.org/debian-security ${CODENAME}-security main contrib
 deb http://deb.debian.org/debian ${CODENAME}-backports main contrib non-free non-free-firmware
 EOF"
 
-echo "✅ Repositories aktualisiert für Debian '$CODENAME'"
-
-echo "=== 🧠 2. System aktualisieren ==="
 sudo apt update && sudo apt full-upgrade -y
 
-echo "=== ⚙️ 3. Installiere Basis-Tools ==="
-sudo apt install -y build-essential git curl wget nano unzip btrfs-progs \
-  grub-btrfs timeshift software-properties-common xorg dwm suckless-tools stterm feh picom slstatus
+# --- Basis ----------------------------------------------------
+echo "=== ⚙️ 2. Basiswerkzeuge installieren ==="
+sudo apt install -y build-essential git curl wget nano unzip software-properties-common
 
-# --- Timeshift Autosnap manuell installieren, falls im Repo nicht vorhanden ---
-if ! apt-cache show timeshift-autosnap >/dev/null 2>&1; then
-  echo "⚙️  Installiere timeshift-autosnap aus GitHub ..."
-  cd /tmp
-  git clone https://github.com/wmutschl/timeshift-autosnap-apt.git
-  cd timeshift-autosnap-apt
-  sudo ./install.sh
-  cd
-else
-  sudo apt install -y timeshift-autosnap
-fi
+# --- DWM + Tools ----------------------------------------------
+echo "=== 💻 3. Xorg + DWM + Tools installieren ==="
+sudo apt install -y xorg dwm suckless-tools stterm feh picom slstatus mesa-utils vulkan-tools
 
-echo "=== 🧱 4. Prüfe Btrfs-Root-Dateisystem ==="
-ROOT_FS=$(findmnt -n -o FSTYPE /)
-if [ "$ROOT_FS" != "btrfs" ]; then
-  echo "❌ Root ist kein Btrfs! Bitte Debian auf Btrfs installieren."
-  exit 1
-fi
-
-echo "=== 📁 5. Erstelle Subvolumes falls nötig ==="
-sudo btrfs subvolume list / | grep -q '@' || {
-  sudo btrfs subvolume create /@ || true
-  sudo btrfs subvolume create /@home || true
-  sudo btrfs subvolume create /@snapshots || true
-}
-
-echo "=== 🧠 6. Aktiviere grub-btrfsd & Timeshift Autosnap ==="
-sudo systemctl enable --now grub-btrfsd.service || true
-sudo update-grub
-
-echo "=== 💻 7. Installiere Zen-Kernel (Liquorix) ==="
+# --- Zen Kernel -----------------------------------------------
+echo "=== ⚙️ 4. Zen-Kernel (Liquorix) installieren ==="
 if ! apt-cache search linux-image-liquorix-amd64 | grep -q liquorix; then
-  echo "→ Zen-Kernel-Repository (Liquorix) hinzufügen ..."
+  echo "→ Liquorix-Repository hinzufügen ..."
   sudo add-apt-repository -y ppa:damentz/liquorix || true
   sudo apt update
 fi
 sudo apt install -y linux-image-liquorix-amd64 linux-headers-liquorix-amd64 || {
-  echo "⚠️  Liquorix-Pakete nicht gefunden. Überspringe Kernel."
+  echo "⚠️  Liquorix-Kernel nicht verfügbar – Standardkernel bleibt aktiv."
 }
 
-echo "=== 🖼️ 8. Installiere Wallpaper ==="
+# --- Wallpaper ------------------------------------------------
+echo "=== 🖼️ 5. Wallpaper einrichten ==="
 if [ -f "./coding-2.png" ]; then
-  sudo mkdir
+  sudo mkdir -p /usr/share/backgrounds
+  sudo cp ./coding-2.png /usr/share/backgrounds/wallpaper.png
+  echo "✅ Wallpaper installiert unter /usr/share/backgrounds/wallpaper.png"
+else
+  echo "⚠️  Kein coding-2.png im Skriptordner gefunden – bitte manuell kopieren."
+fi
+
+# --- Autostart + Xinitrc -------------------------------------
+echo "=== ⚙️ 6. DWM Autostart und Xinitrc konfigurieren ==="
+mkdir -p ~/.dwm
+cat > ~/.dwm/autostart.sh <<'EOF'
+#!/bin/bash
+feh --bg-scale /usr/share/backgrounds/wallpaper.png &
+picom --experimental-backends &
+slstatus &
+EOF
+chmod +x ~/.dwm/autostart.sh
+
+cat > ~/.xinitrc <<'EOF'
+#!/bin/bash
+~/.dwm/autostart.sh &
+exec dwm
+EOF
+chmod +x ~/.xinitrc
+
+# --- Auto-Login ----------------------------------------------
+echo "=== 🔧 7. Auto-Login in DWM (tty1) ==="
+PROFILE=/home/$USER/.bash_profile
+grep -q startx "$PROFILE" || echo '[[ -z $DISPLAY && $XDG_VTNR -eq 1 ]] && exec startx' >> "$PROFILE"
+
+# --- GPU Auswahl ---------------------------------------------
+echo
+echo "🎮 GPU-Setup-Assistent"
+echo "-------------------------"
+echo "Welche GPU-Treiber möchtest du installieren?"
+echo "  [1] NVIDIA (z. B. RTX 3060 Ti)"
+echo "  [2] AMD (z. B. RX 6600 / 6700 / 7900)"
+echo "  [3] Keine – überspringen"
+read -p "Deine Auswahl (1/2/3): " gpu_choice
+
+case "$gpu_choice" in
+  1)
+    echo "=== 🧩 NVIDIA-Treiber werden installiert ==="
+    sudo apt install -y linux-headers-$(uname -r) \
+      nvidia-driver nvidia-smi nvidia-settings nvidia-cuda-toolkit libnvidia-encode1
+    echo "=== 🎬 NVENC-Unterstützung ==="
+    sudo apt install -y ffmpeg nv-codec-headers || true
+    echo "🔍 Test mit: nvidia-smi"
+    ;;
+
+  2)
+    echo "=== 🧩 AMD-Treiber werden installiert ==="
+    sudo apt install -y firmware-amd-graphics mesa-vulkan-drivers vulkan-tools \
+      libdrm-amdgpu1 mesa-utils libgl1-mesa-dri
+    echo "=== 🎬 VAAPI-Unterstützung ==="
+    sudo apt install -y ffmpeg mesa-va-drivers vainfo || true
+    echo "🔍 Test mit: vainfo | grep Driver"
+    ;;
+
+  3)
+    echo "❎ GPU-Installation übersprungen."
+    ;;
+  *)
+    echo "⚠️ Ungültige Auswahl – übersprungen."
+    ;;
+esac
+
+# --- Abschluss ------------------------------------------------
+echo
+echo "✅ Installation abgeschlossen!"
+echo "System läuft mit DWM, Zen-Kernel und konfiguriertem Wallpaper."
+echo "Starte dein System neu mit:  sudo reboot"
