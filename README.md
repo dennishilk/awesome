@@ -1,3 +1,7 @@
+DONT USE ! -- in work -- 
+
+
+
 # 🧠 Awesome
 
 > My personal minimal **AwesomeWM** configuration – clean, fast, and made for Linux nerds.
