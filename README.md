@@ -2,27 +2,42 @@ DONT USE ! -- in work --
 
 
 
-# 🧠 Awesome
+# 🐧 Dennis Hilk - AwesomeWM Interactive Installer
 
-> My personal minimal **AwesomeWM** configuration – clean, fast, and made for Linux nerds.
+An interactive setup script for **AwesomeWM**, created by **Dennis Hilk**.  
+It supports **Debian 13 (Trixie)** and **Arch Linux**, automatically detects your **GPU** (NVIDIA, AMD, Intel, or VM), and sets up a complete **AwesomeWM desktop** without any display manager — optionally booting straight into `startx` via autologin.
 
 ---
 
-## 🐧 Features
+## ✨ Features
 
-- Minimal, fast AwesomeWM setup  
-- Simple, dark theme with binary aesthetics  
-- Single wallpaper (`wallpaper.png`)  
-- Conky overlay for CPU / GPU / RAM stats  
-- PipeWire audio (works perfectly with SPDIF)  
-- Autostart for picom, conky, and wallpaper  
+- 🧠 **Automatic distro detection** (Debian 13 or Arch Linux)
+- 🎮 **GPU auto-detection** (NVIDIA / AMD / Intel / Virtual Machine)
+- 🧰 **Interactive menu** — choose what to install
+- 🧱 **Full AwesomeWM environment** (Xorg, Rofi, Dunst, Picom, Thunar, PipeWire, etc.)
+- 💻 **No display manager required** — optional TTY1 autologin + auto `startx`
+- 🎨 **Automatic AwesomeWM config & rc.lua creation**
+- 🖼️ **Wallpaper folder with default gradient background**
+- 🧩 **Works inside VMs (QEMU, VirtualBox, VMware, etc.)**
+- 💾 **Installation log:** `~/dennishilk-awesome-install.log`
+- 🧡 **Open Source (MIT)** — by Dennis Hilk
+
+---
+
+## 🧩 Requirements
+
+- Debian 13 (Trixie) or Arch Linux  
+- Internet connection  
+- Sudo privileges  
 
 ---
 
 ## ⚙️ Installation
 
+### 1️⃣ Download the script
+
 ```bash
-git clone https://github.com/dennishilk/Awesome.git
-cd Awesome
+wget https://github.com/dennishilk/awesome.git
+cd awesome
 chmod +x install.sh
 ./install.sh
