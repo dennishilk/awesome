@@ -1,0 +1,11 @@
+# Shell-/Fish-Skripte nicht für Spracherkennung zählen
+*.sh      linguist-vendored
+*.bash    linguist-vendored
+*.zsh     linguist-vendored
+*.fish    linguist-vendored
+
+# (Optional) ganzer Ordner mit Scripts ausschließen
+scripts/** linguist-vendored
+
+# (Optional) Doku nicht zählen
+*.md      linguist-documentation
