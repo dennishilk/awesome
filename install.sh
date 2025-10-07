@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================================
-# AwesomeWM Interactive Installer v3.6 — Dennis Hilk 
+# AwesomeWM Interactive Installer v3.6 — Dennis Hilk Nerd Edition (FINAL DARK)
 # Debian 13 (Trixie) & Arch Linux
 # - GPU auto-detect (NVIDIA/AMD/Intel/VM)
 # - No display manager (optional TTY1 autologin + startx)
@@ -9,6 +9,7 @@
 # - Nerd Pack, Browser & Utility Picker (incl. Zen Browser)
 # - Gaming Suite (Steam, Wine, MangoHud, GameMode auto, Gamescope, Lutris, Heroic, ProtonUp-Qt, vkBasalt)
 # - Performance Tweaks: ZRAM + Liquorix (Debian) / Zen (Arch) kernel + GRUB auto default
+# - Dark theming: Awesome zenburn, GTK Adwaita-dark, Alacritty dark config
 # - Looping menu (runs until you choose Exit)
 # Log: ~/awesomewm-install.log
 # ==========================================================
@@ -66,7 +67,7 @@ extra_terms=( xterm alacritty )
 extra_fonts_debian=( fonts-jetbrains-mono fonts-firacode fonts-hack-ttf )
 extra_fonts_arch=( ttf-jetbrains-mono ttf-firacode ttf-hack-nerd )
 extra_shell=( fish )
-extra_tools=( fastfetch )
+extra_tools( ){ echo fastfetch; } # simple helper to avoid old shell array quirks
 
 vm_tools_debian=( spice-vdagent qemu-guest-agent )
 vm_tools_arch=( spice-vdagent qemu-guest-agent )
@@ -124,9 +125,9 @@ install_base(){
 install_extras(){
   echo "Installing Nerd Fonts, Fish, Fastfetch..."
   if [[ "$DISTRO" == "debian" ]]; then
-    apt_install "${extra_fonts_debian[@]}" "${extra_shell[@]}" "${extra_tools[@]}"
+    apt_install "${extra_fonts_debian[@]}" "${extra_shell[@]}" $(extra_tools)
   else
-    pac_install "${extra_fonts_arch[@]}" "${extra_shell[@]}" "${extra_tools[@]}"
+    pac_install "${extra_fonts_arch[@]}" "${extra_shell[@]}" $(extra_tools)
   fi
 }
 
@@ -161,7 +162,7 @@ install_gpu(){
   esac
 }
 
-# ---------------- Awesome config + wallpaper ----------------
+# ---------------- Awesome config + wallpaper + theming ----------------
 CONFIG_DIR="$HOME/.config/awesome"
 
 backup_existing(){
@@ -172,7 +173,7 @@ backup_existing(){
   fi
 }
 
-# Creates rc.lua if missing (with Alacritty binding + wallpaper code)
+# Default rc.lua with dark theme + Alacritty + wallpaper
 create_default_rc(){
   mkdir -p "$CONFIG_DIR"
   cat >"$CONFIG_DIR/rc.lua" <<'LUA'
@@ -181,7 +182,8 @@ local gears = require("gears")
 local awful = require("awful")
 require("awful.autofocus")
 local beautiful = require("beautiful")
-beautiful.init(gears.filesystem.get_themes_dir() .. "default/theme.lua")
+-- DARK THEME
+beautiful.init(gears.filesystem.get_themes_dir() .. "zenburn/theme.lua")
 
 -- Wallpaper from ~/.config/awesome/wallpaper/wallpaper.png
 local wp = (os.getenv("HOME") or "") .. "/.config/awesome/wallpaper/wallpaper.png"
@@ -221,19 +223,36 @@ ensure_config(){
   fi
 }
 
-# Patch rc.lua: ensure Super+Return uses Alacritty & wallpaper handler present
+# Patch rc.lua to force dark theme + Alacritty + wallpaper
 patch_rc(){
   local f="$CONFIG_DIR/rc.lua"
   [[ -f "$f" ]] || return 0
 
-  # Replace xterm/uxterm with alacritty in Return binding
-  if grep -qE 'Return".*xterm|Return".*uxterm|Return".*TERMINAL' "$f"; then
-    sed -i 's/awful\.spawn([^)]*xterm[^)]*)/awful.spawn("alacritty")/g' "$f"
-    sed -i 's/awful\.spawn([^)]*uxterm[^)]*)/awful.spawn("alacritty")/g' "$f"
-    sed -i 's/awful\.spawn([^)]*TERMINAL[^)]*)/awful.spawn("alacritty")/g' "$f"
+  # Ensure 'local beautiful = require("beautiful")' exists
+  grep -q 'require("beautiful")' "$f" || sed -i '1ilocal beautiful = require("beautiful")' "$f"
+
+  # Theme -> zenburn
+  if grep -q 'beautiful.init' "$f"; then
+    awk '
+      BEGIN{done=0}
+      {
+        if($0 ~ /beautiful\.init\(/ && done==0){
+          print "beautiful.init(gears.filesystem.get_themes_dir() .. \"zenburn/theme.lua\")"
+          done=1; next
+        }
+        print
+      }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  else
+    # If somehow missing, append after requires
+    sed -i '1a beautiful.init(gears.filesystem.get_themes_dir() .. "zenburn/theme.lua")' "$f"
   fi
 
-  # Insert wallpaper block if missing
+  # Super+Return => Alacritty (replace common variants)
+  sed -i 's/awful\.spawn([^)]*xterm[^)]*)/awful.spawn("alacritty")/g' "$f"
+  sed -i 's/awful\.spawn([^)]*uxterm[^)]*)/awful.spawn("alacritty")/g' "$f"
+  sed -i 's/awful\.spawn([^)]*TERMINAL[^)]*)/awful.spawn("alacritty")/g' "$f"
+
+  # Wallpaper block if missing
   if ! grep -q 'gears.wallpaper.maximized' "$f"; then
     awk '
       BEGIN{inserted=0}
@@ -289,6 +308,76 @@ exec awesome
 EOF
     chmod +x "$HOME/.xinitrc"
   fi
+}
+
+# GTK dark + TERMINAL env + Alacritty config
+setup_alacritty_config(){
+  echo "Writing Alacritty dark theme config..."
+  mkdir -p "$HOME/.config/alacritty"
+  cat >"$HOME/.config/alacritty/alacritty.toml" <<'TOML'
+[window]
+opacity = 1.0
+padding = { x = 8, y = 8 }
+dynamic_title = true
+
+[font]
+normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
+bold   = { family = "JetBrainsMono Nerd Font", style = "Bold" }
+italic = { family = "JetBrainsMono Nerd Font", style = "Italic" }
+size = 11.0
+
+# Catppuccin Mocha-ish
+[colors.primary]
+background = "#1e1e2e"
+foreground = "#cdd6f4"
+
+[colors.cursor]
+text = "#1e1e2e"
+cursor = "#cdd6f4"
+
+[colors.normal]
+black   = "#45475a"
+red     = "#f38ba8"
+green   = "#a6e3a1"
+yellow  = "#f9e2af"
+blue    = "#89b4fa"
+magenta = "#f5c2e7"
+cyan    = "#94e2d5"
+white   = "#bac2de"
+
+[colors.bright]
+black   = "#585b70"
+red     = "#f38ba8"
+green   = "#a6e3a1"
+yellow  = "#f9e2af"
+blue    = "#89b4fa"
+magenta = "#f5c2e7"
+cyan    = "#94e2d5"
+white   = "#a6adc8"
+
+[mouse]
+hide_when_typing = true
+TOML
+}
+
+apply_dark_theme(){
+  echo "Applying system dark theme + Alacritty as default terminal..."
+  # GTK3 dark
+  mkdir -p "$HOME/.config/gtk-3.0"
+  cat >"$HOME/.config/gtk-3.0/settings.ini" <<'INI'
+[Settings]
+gtk-theme-name=Adwaita-dark
+gtk-icon-theme-name=Adwaita
+gtk-font-name=JetBrains Mono 10
+gtk-application-prefer-dark-theme=1
+INI
+  # GTK2 dark
+  echo 'gtk-theme-name="Adwaita-dark"' > "$HOME/.gtkrc-2.0"
+  # Default terminal env
+  grep -q 'export TERMINAL=alacritty' "$HOME/.profile" 2>/dev/null || echo 'export TERMINAL=alacritty' >> "$HOME/.profile"
+  # Alacritty config
+  setup_alacritty_config
+  echo "Dark theme applied."
 }
 
 enable_tty_autologin(){
@@ -744,9 +833,9 @@ main_menu(){
 [1]  Base System (AwesomeWM, Xorg, PipeWire, Tools)
 [2]  GPU Drivers (Auto-Detect)
 [3]  VM Guest Tools
-[4]  Awesome Config + xinit + wallpaper + backup (+rc.lua patch)
+[4]  Awesome Config + xinit + wallpaper + backup (+rc.lua patch + dark theme)
 [5]  TTY Autologin + auto startx
-[6]  Nerd Fonts + Fish + Fastfetch (Dashboard + auto-login shell)
+[6]  Nerd Fonts + Fish + Fastfetch (Dashboard + auto-login shell + Alacritty config)
 [7]  Nerd Pack (btop, cmatrix, neovim, htop, lolcat, cava + media tools)
 [8]  Browser & Utility Picker (Firefox, Zen Browser, Google Chrome, Brave, Chromium)
 [9]  Gaming Suite (Steam, Wine, MangoHud, GameMode, Gamescope, Lutris, Heroic, ProtonUp-Qt, vkBasalt)
@@ -761,15 +850,15 @@ MENU
       1)  install_base ;;
       2)  install_gpu ;;
       3)  install_vm_tools ;;
-      4)  backup_existing; ensure_config; patch_rc; ensure_xinit; copy_wallpaper ;;
+      4)  backup_existing; ensure_config; patch_rc; ensure_xinit; copy_wallpaper; apply_dark_theme ;;
       5)  enable_tty_autologin ;;
-      6)  install_extras; setup_fish ;;
+      6)  install_extras; setup_fish; setup_alacritty_config ;;
       7)  install_nerd_pack ;;
       8)  apps_menu ;;
       9)  gaming_suite_menu ;;
       10) performance_menu ;;
       11) presets_menu ;;
-      12) install_base; install_gpu; install_vm_tools; backup_existing; ensure_config; patch_rc; ensure_xinit; copy_wallpaper; install_extras; setup_fish; install_nerd_pack; apps_menu; gaming_suite_menu; performance_menu ;;
+      12) install_base; install_gpu; install_vm_tools; backup_existing; ensure_config; patch_rc; ensure_xinit; copy_wallpaper; apply_dark_theme; install_extras; setup_fish; setup_alacritty_config; install_nerd_pack; apps_menu; gaming_suite_menu; performance_menu ;;
       0|q|quit|exit) echo "Bye!"; break ;;
       *) echo "Invalid choice."; sleep 1 ;;
     esac
