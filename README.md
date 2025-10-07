@@ -41,3 +41,11 @@ wget https://github.com/dennishilk/awesome.git
 cd awesome
 chmod +x install.sh
 ./install.sh
+
+📁 Directory Structure
+Path	Description
+~/.config/awesome/rc.lua	Main AwesomeWM config (auto-created)
+~/.config/awesome/wallpaper/	Default wallpaper directory
+~/.xinitrc	Startup file for startx
+~/.bash_profile	Contains autostart logic for X on TTY1
+~/dennishilk-awesome-install.log	Installation log file
