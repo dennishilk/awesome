@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==========================================================
-# Dennis Hilk - AwesomeWM Interactive Installer
+# AwesomeWM Interactive Installer
 # Works on: Debian 13 (Trixie) & Arch Linux
 # Features: Interactive menu, GPU auto-detect (NVIDIA/AMD/Intel/VM),
 #           no display manager (optional TTY1 autologin + startx),
@@ -11,20 +11,9 @@
 
 set -Eeuo pipefail
 
-LOG_FILE="$HOME/dennishilk-awesome-install.log"
+LOG_FILE="$HOME/awesomewm-install.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-
-banner() {
-  clear
-  cat <<'EOF'
-
-        AwesomeWM Setup — By Dennis Hilk
-EOF
-  echo
-}
-
-# -------- Helpers --------
 die(){ echo "ERROR: $*" >&2; exit 1; }
 confirm(){ read -rp "$1 [y/N]: " _c; [[ "${_c:-}" =~ ^[Yy]$ ]]; }
 command_exists(){ command -v "$1" &>/dev/null; }
@@ -58,9 +47,9 @@ base_pkgs_debian=(
   rofi dunst feh lxappearance
   thunar thunar-archive-plugin thunar-volman gvfs-backends unzip
   picom
-  pipewire-audio pipewire-pulse pavucontrol pamixer
+  pipewire-audio pipewire-pulse wireplumber pavucontrol pamixer
   xdg-user-dirs-gtk fonts-font-awesome fonts-terminus fonts-dejavu-core
-  flameshot xclip curl wget git micro
+  flameshot xclip curl wget git micro pciutils
 )
 
 base_pkgs_arch=(
@@ -71,19 +60,16 @@ base_pkgs_arch=(
   picom
   pipewire pipewire-pulse wireplumber pavucontrol pamixer
   xdg-user-dirs ttf-dejavu ttf-font-awesome terminus-font
-  flameshot xclip curl wget git micro
+  flameshot xclip curl wget git micro pciutils
 )
 
 extra_terms_debian=( xterm alacritty )
 extra_terms_arch=( xterm alacritty )
-
 vm_tools_debian=( spice-vdagent qemu-guest-agent )
 vm_tools_arch=( spice-vdagent qemu-guest-agent )
-
-# GPU driver sets (keep conservative / stable)
 gpu_debian_nvidia=( nvidia-driver firmware-misc-nonfree )
 gpu_debian_amd=( firmware-amd-graphics mesa-vulkan-drivers )
-gpu_debian_intel=( mesa-vulkan-drivers intel-media-va-driver-non-free || true )
+gpu_debian_intel=( mesa-vulkan-drivers intel-media-va-driver-non-free )
 gpu_arch_nvidia=( nvidia nvidia-utils )
 gpu_arch_amd=( mesa vulkan-radeon )
 gpu_arch_intel=( mesa vulkan-intel )
@@ -96,17 +82,15 @@ pac_install(){ sudo pacman -Syu --noconfirm "$@"; }
 install_base(){
   if [[ "$DISTRO" == "debian" ]]; then
     apt_update
-    apt_install "${base_pkgs_debian[@]}"
-    apt_install "${extra_terms_debian[@]}"
+    apt_install "${base_pkgs_debian[@]}" "${extra_terms_debian[@]}"
   else
-    pac_install "${base_pkgs_arch[@]}"
-    pac_install "${extra_terms_arch[@]}"
+    pac_install "${base_pkgs_arch[@]}" "${extra_terms_arch[@]}"
   fi
 }
 
 install_vm_tools(){
-  if [[ "$GPU_KIND" != "vm" ]]; then return; fi
-  echo "Installing VM guest tools…"
+  [[ "$GPU_KIND" != "vm" ]] && return
+  echo "Installing VM guest tools..."
   if [[ "$DISTRO" == "debian" ]]; then
     apt_install "${vm_tools_debian[@]}"
     sudo systemctl enable --now qemu-guest-agent || true
@@ -121,56 +105,39 @@ install_gpu(){
     nvidia)
       echo "Detected GPU: NVIDIA"
       if [[ "$DISTRO" == "debian" ]]; then
-        # Ensure non-free-firmware is available
         if ! grep -Eq 'non-free-firmware' /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null; then
-          echo "Enabling non-free-firmware for Debian 13…"
+          echo "Enabling non-free-firmware for Debian..."
           sudo sed -i 's/main/main contrib non-free non-free-firmware/g' /etc/apt/sources.list
           apt_update
         fi
         apt_install "${gpu_debian_nvidia[@]}"
       else
         pac_install "${gpu_arch_nvidia[@]}"
-      fi
-      ;;
+      fi ;;
     amd)
       echo "Detected GPU: AMD"
-      if [[ "$DISTRO" == "debian" ]]; then
-        apt_install "${gpu_debian_amd[@]}"
-      else
-        pac_install "${gpu_arch_amd[@]}"
-      fi
-      ;;
+      [[ "$DISTRO" == "debian" ]] && apt_install "${gpu_debian_amd[@]}" || pac_install "${gpu_arch_amd[@]}" ;;
     intel)
       echo "Detected GPU: Intel"
-      if [[ "$DISTRO" == "debian" ]]; then
-        apt_install mesa-va-drivers || true
-        apt_install "${gpu_debian_intel[@]//|| true/}"
-      else
-        pac_install "${gpu_arch_intel[@]}"
-      fi
-      ;;
+      [[ "$DISTRO" == "debian" ]] && apt_install mesa-va-drivers "${gpu_debian_intel[@]}" || pac_install "${gpu_arch_intel[@]}" ;;
     vm)
-      echo "Detected virtual GPU — skipping native GPU drivers."
-      ;;
+      echo "Detected virtual GPU — skipping native GPU drivers." ;;
     *)
-      echo "GPU not detected — skipping driver installation."
-      ;;
+      echo "No GPU detected — skipping driver installation." ;;
   esac
 }
 
-# -------- Config: AwesomeWM + xinit --------
+# -------- Config --------
 CONFIG_DIR="$HOME/.config/awesome"
 ensure_config(){
   mkdir -p "$CONFIG_DIR"
   if [[ ! -f "$CONFIG_DIR/rc.lua" ]]; then
-    echo "Creating rc.lua from system default…"
-    # Prefer packaged default if available
+    echo "Creating default rc.lua..."
     if [[ -f /etc/xdg/awesome/rc.lua ]]; then
       cp /etc/xdg/awesome/rc.lua "$CONFIG_DIR/rc.lua"
     else
-      # Minimal fallback rc.lua
       cat >"$CONFIG_DIR/rc.lua" <<'LUA'
--- Minimal rc.lua fallback — Dennis Hilk
+-- Minimal rc.lua fallback
 pcall(require, "luarocks.loader")
 local gears = require("gears")
 local awful = require("awful")
@@ -178,54 +145,43 @@ require("awful.autofocus")
 local beautiful = require("beautiful")
 beautiful.init(gears.filesystem.get_themes_dir() .. "default/theme.lua")
 awful.layout.layouts = { awful.layout.suit.tile, awful.layout.suit.floating }
-awful.spawn.with_shell("picom --experimental-backends --daemon")
+awful.spawn.with_shell("picom --daemon")
 awful.spawn.with_shell("nm-applet || true")
 awful.spawn.with_shell("dunst || true")
 awful.spawn.with_shell("flameshot || true")
--- Mod+Return to open terminal
 local modkey = "Mod4"
 awful.key({ modkey }, "Return", function() awful.spawn(os.getenv("TERMINAL") or "xterm") end,
-          {description = "open a terminal", group = "launcher"})
+          {description = "open terminal", group = "launcher"})
 root.keys(awful.util.table.join(root.keys()))
 LUA
     fi
   fi
 
-  # Set TERMINAL default
   if ! grep -q 'export TERMINAL=' "$HOME/.profile" 2>/dev/null; then
     echo 'export TERMINAL=alacritty' >> "$HOME/.profile"
   fi
 
-  # Wallpaper dir (optional nice default)
   mkdir -p "$CONFIG_DIR/wallpaper"
   if [[ ! -f "$CONFIG_DIR/wallpaper/wallpaper.png" ]]; then
-    # simple dark gradient as placeholder
     convert -size 1920x1080 gradient:#0b0b10-#12121a "$CONFIG_DIR/wallpaper/wallpaper.png" 2>/dev/null || true
   fi
 }
 
 ensure_xinit(){
-  # .xinitrc for startx
   if [[ ! -f "$HOME/.xinitrc" ]]; then
     cat >"$HOME/.xinitrc" <<'EOF'
 #!/usr/bin/env bash
-# ~/.xinitrc — start AwesomeWM (Dennis Hilk)
 export XDG_CURRENT_DESKTOP=awesome
 export XDG_SESSION_TYPE=x11
-# Keyrate tweak
 xset r rate 250 40
-# Locale fix (optional)
 export LANG=${LANG:-en_US.UTF-8}
-# Start Awesome
 exec awesome
 EOF
     chmod +x "$HOME/.xinitrc"
   fi
 }
 
-# -------- Optional: Autologin to TTY1 + auto startx --------
 enable_tty_autologin(){
-  # Create systemd override for getty@tty1
   sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
   cat <<EOF | sudo tee /etc/systemd/system/getty@tty1.service.d/override.conf >/dev/null
 [Service]
@@ -235,12 +191,10 @@ Type=idle
 EOF
   sudo systemctl daemon-reload
   sudo systemctl enable getty@tty1.service
-  echo "Autologin on tty1 enabled for user $USER."
+  echo "Autologin enabled for $USER on tty1."
 
-  # Auto-start X on login to tty1
   if ! grep -q 'startx' "$HOME/.bash_profile" 2>/dev/null; then
     cat >>"$HOME/.bash_profile" <<'BASH'
-# Auto-start X on tty1
 if [[ -z "$DISPLAY" ]] && [[ $(tty) == /dev/tty1 ]]; then
   startx
   logout
@@ -251,7 +205,7 @@ BASH
 
 # -------- Menu --------
 main_menu(){
-  banner
+  echo
   echo "Detected distro: $DISTRO"
   echo "Detected GPU:    $GPU_KIND"
   echo
@@ -260,7 +214,7 @@ main_menu(){
 [2] Install GPU drivers (auto-detected)
 [3] Install VM guest tools (if VM)
 [4] Setup AwesomeWM config + xinit
-[5] Enable TTY1 autologin + auto startx (no display manager)
+[5] Enable TTY1 autologin + auto startx
 [6] Do EVERYTHING (1–5)
 [0] Exit
 MENU
@@ -280,25 +234,17 @@ MENU
   confirm "Return to menu?" && main_menu || true
 }
 
-# -------- Pre-flight --------
-banner
-echo "This will set up AwesomeWM on Debian 13 or Arch Linux — without a display manager."
-echo "A log is saved to: $LOG_FILE"
+# -------- Run --------
+echo "AwesomeWM Setup for Debian 13 / Arch Linux"
+echo "Log file: $LOG_FILE"
 echo
 confirm "Continue?" || die "Aborted."
 
 detect_distro
 detect_gpu
-
-# Ensure needed package manager exists
-if [[ "$DISTRO" == "debian" ]]; then
-  command_exists apt-get || die "apt-get not found."
-else
-  command_exists pacman || die "pacman not found."
-fi
-
+[[ "$DISTRO" == "debian" ]] && command_exists apt-get || command_exists pacman || die "No package manager found."
 main_menu
 
 echo
-echo "✅ Done. You can start AwesomeWM with 'startx' (or reboot if you enabled autologin)."
-echo "   Log: $LOG_FILE"
+echo "Done. Start AwesomeWM with 'startx' or reboot if autologin was enabled."
+echo "Log: $LOG_FILE"
