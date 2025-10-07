@@ -37,7 +37,7 @@ It supports **Debian 13 (Trixie)** and **Arch Linux**, automatically detects you
 ### 1️⃣ Download the script
 
 ```bash
-wget https://github.com/dennishilk/awesome.git
+git clone https://github.com/dennishilk/awesome.git
 cd awesome
 chmod +x install.sh
 ./install.sh
