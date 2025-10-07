@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # ==========================================================
-# AwesomeWM Interactive Installer v3.6 — Dennis Hilk
+# AwesomeWM Interactive Installer v3.6 — Dennis Hilk 
 # Debian 13 (Trixie) & Arch Linux
-# Features:
-#  - GPU auto-detect (NVIDIA/AMD/Intel/VM)
-#  - No display manager (optional autologin + startx)
-#  - Wallpaper from script folder (wallpaper.png)
-#  - Nerd Fonts, Fish + Fastfetch + Fish Dashboard
-#  - Nerd Pack, Browser & Utility Picker, Gaming Suite
-#  - Performance Tweaks: ZRAM + Zen (Arch)/Liquorix (Debian) kernel + GRUB Auto
+# - GPU auto-detect (NVIDIA/AMD/Intel/VM)
+# - No display manager (optional TTY1 autologin + startx)
+# - Wallpaper from script folder (wallpaper.png) + rc.lua fallback
+# - Nerd Fonts, Fish + Fastfetch + Fish Dashboard (pure fish) + auto startx
+# - Nerd Pack, Browser & Utility Picker (incl. Zen Browser)
+# - Gaming Suite (Steam, Wine, MangoHud, GameMode auto, Gamescope, Lutris, Heroic, ProtonUp-Qt, vkBasalt)
+# - Performance Tweaks: ZRAM + Liquorix (Debian) / Zen (Arch) kernel + GRUB auto default
+# - Looping menu (runs until you choose Exit)
 # Log: ~/awesomewm-install.log
 # ==========================================================
 
 set -Eeuo pipefail
+trap 'echo; echo "[Hint] Use option 0 (Exit) to quit the installer."; sleep 1' INT
+
 LOG_FILE="$HOME/awesomewm-install.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
@@ -21,6 +24,7 @@ confirm(){ read -rp "$1 [y/N]: " _c; [[ "${_c:-}" =~ ^[Yy]$ ]]; }
 ask_yn(){ read -rp "$1 [y/N]: " _a; [[ "${_a:-}" =~ ^[Yy]$ ]]; }
 command_exists(){ command -v "$1" &>/dev/null; }
 
+# ---------------- Distro & GPU detection ----------------
 DISTRO=""
 detect_distro(){
   if [[ -f /etc/debian_version ]]; then DISTRO="debian"
@@ -65,7 +69,7 @@ extra_shell=( fish )
 extra_tools=( fastfetch )
 
 vm_tools_debian=( spice-vdagent qemu-guest-agent )
-vm_tools_arch( ){ echo "spice-vdagent qemu-guest-agent"; } # function to avoid array expansion issues in shells
+vm_tools_arch=( spice-vdagent qemu-guest-agent )
 
 gpu_debian_nvidia=( nvidia-driver firmware-misc-nonfree )
 gpu_debian_amd=( firmware-amd-graphics mesa-vulkan-drivers )
@@ -133,7 +137,7 @@ install_vm_tools(){
     apt_install "${vm_tools_debian[@]}"
     sudo systemctl enable --now qemu-guest-agent || true
   else
-    pac_install spice-vdagent qemu-guest-agent
+    pac_install "${vm_tools_arch[@]}"
     sudo systemctl enable --now qemu-guest-agent || true
   fi
 }
@@ -168,35 +172,87 @@ backup_existing(){
   fi
 }
 
-ensure_config(){
+# Creates rc.lua if missing (with Alacritty binding + wallpaper code)
+create_default_rc(){
   mkdir -p "$CONFIG_DIR"
-  if [[ ! -f "$CONFIG_DIR/rc.lua" ]]; then
-    echo "Creating default rc.lua..."
-    if [[ -f /etc/xdg/awesome/rc.lua ]]; then
-      cp /etc/xdg/awesome/rc.lua "$CONFIG_DIR/rc.lua"
-    else
-      cat >"$CONFIG_DIR/rc.lua" <<'LUA'
--- Minimal rc.lua fallback
+  cat >"$CONFIG_DIR/rc.lua" <<'LUA'
 pcall(require, "luarocks.loader")
 local gears = require("gears")
 local awful = require("awful")
 require("awful.autofocus")
 local beautiful = require("beautiful")
 beautiful.init(gears.filesystem.get_themes_dir() .. "default/theme.lua")
+
+-- Wallpaper from ~/.config/awesome/wallpaper/wallpaper.png
+local wp = (os.getenv("HOME") or "") .. "/.config/awesome/wallpaper/wallpaper.png"
+if gears.filesystem.file_readable(wp) then
+  screen.connect_signal("request::wallpaper", function(s)
+    gears.wallpaper.maximized(wp, s, true)
+  end)
+end
+
 awful.layout.layouts = { awful.layout.suit.tile, awful.layout.suit.floating }
+
+-- Autostart basics
 awful.spawn.with_shell("picom --daemon")
 awful.spawn.with_shell("nm-applet || true")
 awful.spawn.with_shell("dunst || true")
 awful.spawn.with_shell("flameshot || true")
+
+-- Keys
 local modkey = "Mod4"
-awful.key({ modkey }, "Return", function() awful.spawn(os.getenv("TERMINAL") or "alacritty" or "xterm") end,
+-- Super+Return -> Alacritty
+awful.key({ modkey }, "Return", function() awful.spawn("alacritty") end,
           {description = "open terminal", group = "launcher"})
+
 root.keys(awful.util.table.join(root.keys()))
 LUA
+}
+
+ensure_config(){
+  mkdir -p "$CONFIG_DIR"
+  if [[ ! -f "$CONFIG_DIR/rc.lua" ]]; then
+    echo "Creating rc.lua..."
+    if [[ -f /etc/xdg/awesome/rc.lua ]]; then
+      cp /etc/xdg/awesome/rc.lua "$CONFIG_DIR/rc.lua"
+    else
+      create_default_rc
     fi
   fi
-  if ! grep -q 'export TERMINAL=' "$HOME/.profile" 2>/dev/null; then
-    echo 'export TERMINAL=alacritty' >> "$HOME/.profile"
+}
+
+# Patch rc.lua: ensure Super+Return uses Alacritty & wallpaper handler present
+patch_rc(){
+  local f="$CONFIG_DIR/rc.lua"
+  [[ -f "$f" ]] || return 0
+
+  # Replace xterm/uxterm with alacritty in Return binding
+  if grep -qE 'Return".*xterm|Return".*uxterm|Return".*TERMINAL' "$f"; then
+    sed -i 's/awful\.spawn([^)]*xterm[^)]*)/awful.spawn("alacritty")/g' "$f"
+    sed -i 's/awful\.spawn([^)]*uxterm[^)]*)/awful.spawn("alacritty")/g' "$f"
+    sed -i 's/awful\.spawn([^)]*TERMINAL[^)]*)/awful.spawn("alacritty")/g' "$f"
+  fi
+
+  # Insert wallpaper block if missing
+  if ! grep -q 'gears.wallpaper.maximized' "$f"; then
+    awk '
+      BEGIN{inserted=0}
+      /beautiful\.init/{
+        print; 
+        print "";
+        print "-- Wallpaper from ~/.config/awesome/wallpaper/wallpaper.png";
+        print "local gears = require(\"gears\")";
+        print "local wp = (os.getenv(\"HOME\") or \"\") .. \"/.config/awesome/wallpaper/wallpaper.png\"";
+        print "if gears.filesystem.file_readable(wp) then";
+        print "  screen.connect_signal(\"request::wallpaper\", function(s)";
+        print "    gears.wallpaper.maximized(wp, s, true)";
+        print "  end)";
+        print "end";
+        inserted=1; next
+      }
+      {print}
+      END{if(!inserted){}}
+    ' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   fi
 }
 
@@ -220,6 +276,11 @@ ensure_xinit(){
   if [[ ! -f "$HOME/.xinitrc" ]]; then
     cat >"$HOME/.xinitrc" <<'EOF'
 #!/usr/bin/env bash
+# Set wallpaper via feh before AwesomeWM
+if [ -f "$HOME/.config/awesome/wallpaper/wallpaper.png" ]; then
+  feh --no-fehbg --bg-fill "$HOME/.config/awesome/wallpaper/wallpaper.png" &
+fi
+
 export XDG_CURRENT_DESKTOP=awesome
 export XDG_SESSION_TYPE=x11
 xset r rate 250 40
@@ -241,6 +302,7 @@ EOF
   sudo systemctl daemon-reload
   sudo systemctl enable getty@tty1.service
   echo "Autologin enabled on tty1 for $USER."
+  # Bash fallback (not used when fish is login shell, but harmless)
   if ! grep -q 'startx' "$HOME/.bash_profile" 2>/dev/null; then
     cat >>"$HOME/.bash_profile" <<'BASH'
 if [[ -z "$DISPLAY" ]] && [[ $(tty) == /dev/tty1 ]]; then
@@ -251,85 +313,90 @@ BASH
   fi
 }
 
-# ---------------- Fish shell (Dashboard) ----------------
+# ---------------- Fish shell (Dashboard, pure fish, auto startx) ----------------
 setup_fish(){
   echo "Setting up Fish shell configuration & dashboard..."
   mkdir -p "$HOME/.config/fish"
   cat >"$HOME/.config/fish/config.fish" <<'FISH'
-# ===== Fish shell config — AwesomeWM Nerd Dashboard =====
+# ===== Fish shell config — AwesomeWM Nerd Dashboard (pure Fish) =====
 set -gx EDITOR micro
 set -gx TERMINAL alacritty
 set -gx BROWSER firefox
 
-function _fmt_bytes
-  set -l bytes $argv[1]
-  if test -z "$bytes"; echo "0"; return; end
-  set -l kib (math "$bytes / 1024")
-  set -l mib (math "scale=2; $kib / 1024")
-  set -l gib (math "scale=2; $mib / 1024")
-  if test (math "$gib >= 1") -eq 1
+function _fmt_gib
+    set -l bytes $argv[1]
+    if test -z "$bytes"
+        echo "0 GiB"
+        return
+    end
+    set -l gib (math --scale 2 "$bytes / (1024 * 1024 * 1024)")
     echo "$gib GiB"
-  else
-    echo "$mib MiB"
-  end
 end
 
 function nerd_dashboard
-  set_color cyan
-  echo "────────────────────────────────────────────────────"
-  set_color normal
+    set_color cyan
+    echo "────────────────────────────────────────────────────"
+    set_color normal
 
-  set user (whoami)
-  set host (hostname)
-  set os "Unknown"
-  if test -r /etc/os-release
-    set os (string match -r '^PRETTY_NAME=.*' </etc/os-release | sed 's/PRETTY_NAME=//; s/"//g')
-  end
-  set kernel (uname -r)
+    set user (whoami)
+    set host (hostname)
 
-  set up_pretty (uptime -p | sed 's/^up //')
-  set up_total "0s"
-  if test -r /proc/uptime
-    set -l secs (awk '{print int($1)}' /proc/uptime)
-    set -l d (math "$secs / 86400")
-    set -l h (math "($secs % 86400) / 3600")
-    set -l m (math "($secs % 3600) / 60")
-    set up_total "$d"d" "$h"h" "$m"m
-  end
+    set os "Unknown"
+    if test -r /etc/os-release
+        set os (string match -r '^PRETTY_NAME=.*' </etc/os-release | sed 's/PRETTY_NAME=//; s/"//g')
+    end
 
-  set cpu (grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')
-  set gpu (lspci | grep -E 'VGA|3D' | head -n1 | sed 's/.*: //')
+    set kernel (uname -r)
+    set up_pretty (uptime -p | sed 's/^up //')
 
-  set used_bytes (awk '/Mem:/ {print $3*1024}' <(free -b))
-  set total_bytes (awk '/Mem:/ {print $2*1024}' <(free -b))
-  set used (_fmt_bytes $used_bytes)
-  set total (_fmt_bytes $total_bytes)
+    set up_total "0s"
+    if test -r /proc/uptime
+        set -l secs (awk '{print int($1)}' /proc/uptime)
+        set -l d (math "$secs / 86400")
+        set -l h (math "($secs % 86400) / 3600")
+        set -l m (math "($secs % 3600) / 60")
+        set up_total "$d"d" "$h"h" "$m"m
+    end
 
-  # ZRAM (zram0 size if present)
-  set zram "inactive"
-  if test -e /sys/block/zram0/disksize
-    set -l zbytes (cat /sys/block/zram0/disksize)
-    set zram "active ("(_fmt_bytes $zbytes)")"
-  end
+    set cpu (grep -m1 'model name' /proc/cpuinfo | sed 's/.*: //')
+    set gpu (lspci | grep -E 'VGA|3D' | head -n1 | sed 's/.*: //')
 
-  set_color green
-  echo "🐧  User: $user@$host"
-  echo "🧩  OS:   $os"
-  echo "📦  Kernel: $kernel"
-  echo "🕐  Uptime: $up_pretty  |  Total: $up_total"
-  echo "💻  CPU: $cpu"
-  echo "🎮  GPU: $gpu"
-  echo "🧠  RAM: $used / $total"
-  echo "🔄  ZRAM: $zram"
-  set_color cyan
-  echo "────────────────────────────────────────────────────"
-  set_color normal
+    set used_bytes (free -b | awk '/Mem:/ {print $3}')
+    set total_bytes (free -b | awk '/Mem:/ {print $2}')
+    set used (_fmt_gib $used_bytes)
+    set total (_fmt_gib $total_bytes)
+
+    set zram "inactive"
+    if test -e /sys/block/zram0/disksize
+        set -l zbytes (cat /sys/block/zram0/disksize)
+        set zram "active ("(_fmt_gib $zbytes)")"
+    end
+
+    set_color green
+    echo "🐧  User: $user@$host"
+    echo "🧩  OS:   $os"
+    echo "📦  Kernel: $kernel"
+    echo "🕐  Uptime: $up_pretty  |  Total: $up_total"
+    echo "💻  CPU: $cpu"
+    echo "🎮  GPU: $gpu"
+    echo "🧠  RAM: $used / $total"
+    echo "🔄  ZRAM: $zram"
+    set_color cyan
+    echo "────────────────────────────────────────────────────"
+    set_color normal
 end
 
+# Show dashboard
 nerd_dashboard
 
+# Optional fastfetch
 if type -q fastfetch
-  fastfetch
+    fastfetch
+end
+
+# Auto-start X on TTY1 (fish is login shell)
+if test -z "$DISPLAY"; and test (tty) = "/dev/tty1"
+    exec startx
 end
 FISH
 
@@ -390,10 +457,7 @@ install_brave(){
 install_zen_browser(){
   echo "Installing Zen Browser..."
   if [[ "$DISTRO" == "debian" ]]; then
-    # AppImage install to /opt/zen-browser with desktop entry
-    local ver url appdir bin
-    ver="latest"
-    url="https://github.com/zen-browser/desktop/releases/latest/download/zen-browser.AppImage"
+    local url="https://github.com/zen-browser/desktop/releases/latest/download/zen-browser.AppImage"
     sudo mkdir -p /opt/zen-browser
     sudo curl -L "$url" -o /opt/zen-browser/zen-browser.AppImage
     sudo chmod +x /opt/zen-browser/zen-browser.AppImage
@@ -406,7 +470,6 @@ Type=Application
 Icon=zen-browser
 Categories=Network;WebBrowser;
 DESK
-    # Try to extract icon if supported, else skip
     echo "Zen Browser AppImage installed to /opt/zen-browser"
   else
     if command_exists yay; then
@@ -538,7 +601,7 @@ gaming_suite_menu(){
   echo "Gaming Suite complete."
 }
 
-# ---------------- Performance Tweaks: ZRAM + Zen/Liquorix ----------------
+# ---------------- Performance Tweaks: ZRAM + Liquorix/Zen + GRUB ----------------
 setup_zram(){
   echo "Configuring ZRAM (50% of RAM)..."
   if [[ "$DISTRO" == "debian" ]]; then
@@ -569,8 +632,7 @@ install_kernel_perf(){
     curl -s 'https://liquorix.net/add-liquorix-repo.sh' | sudo bash - || true
     apt_update
     apt_install linux-image-liquorix-amd64 linux-headers-liquorix-amd64 || echo "Liquorix install attempt finished."
-    # Auto-set GRUB default (saved) & try to pick Liquorix
-    if command_exists update-grub; then sudo update-grub || true; else sudo grub-mkconfig -o /boot/grub/grub.cfg || true; fi
+    # GRUB saved default + try set Liquorix entry
     sudo sed -i 's/^GRUB_DEFAULT=.*/GRUB_DEFAULT=saved/' /etc/default/grub || true
     sudo sed -i 's/^#\?GRUB_SAVEDEFAULT=.*/GRUB_SAVEDEFAULT=true/' /etc/default/grub || true
     if command_exists update-grub; then sudo update-grub || true; else sudo grub-mkconfig -o /boot/grub/grub.cfg || true; fi
@@ -596,7 +658,7 @@ performance_menu(){
   confirm "Reboot now to activate kernel & ZRAM?" && sudo reboot || true
 }
 
-# ---------------- Preset Menus ----------------
+# ---------------- Preset Menus (all with per-item selection) ----------------
 preset_gaming(){
   echo "Preset: Gaming Setup — select components:"
   ask_yn "Liquorix/Zen Kernel?"     && install_kernel_perf
@@ -651,65 +713,67 @@ preset_minimal_nerd(){
   echo "Minimal Nerd preset finished."
 }
 presets_menu(){
-  cat <<'P'
+  while true; do
+    cat <<'P'
 Preset Menu — choose one:
 [1] Gaming Setup (choose components)
 [2] Creator Setup (choose components)
 [3] Minimal Nerd Setup (choose components, CLI-only)
 [0] Back
 P
-  read -rp "Choose: " p
-  case "${p:-}" in
-    1) preset_gaming ;;
-    2) preset_creator ;;
-    3) preset_minimal_nerd ;;
-    0) return ;;
-    *) echo "Invalid choice."; ;;
-  esac
+    read -rp "Choose: " p
+    case "${p:-}" in
+      1) preset_gaming ;;
+      2) preset_creator ;;
+      3) preset_minimal_nerd ;;
+      0) break ;;
+      *) echo "Invalid choice."; sleep 1 ;;
+    esac
+  done
 }
 
-# ---------------- Menu ----------------
+# ---------------- Looping main menu ----------------
 main_menu(){
-  echo
-  echo "Detected distro: $DISTRO"
-  echo "Detected GPU:    $GPU_KIND"
-  echo "Log file:        $LOG_FILE"
-  echo
-  cat <<'MENU'
+  while true; do
+    clear
+    echo "Detected distro: $DISTRO"
+    echo "Detected GPU:    $GPU_KIND"
+    echo "Log file:        $LOG_FILE"
+    echo
+    cat <<'MENU'
 [1]  Base System (AwesomeWM, Xorg, PipeWire, Tools)
 [2]  GPU Drivers (Auto-Detect)
 [3]  VM Guest Tools
-[4]  Awesome Config + xinit + wallpaper + backup
+[4]  Awesome Config + xinit + wallpaper + backup (+rc.lua patch)
 [5]  TTY Autologin + auto startx
 [6]  Nerd Fonts + Fish + Fastfetch (Dashboard + auto-login shell)
 [7]  Nerd Pack (btop, cmatrix, neovim, htop, lolcat, cava + media tools)
 [8]  Browser & Utility Picker (Firefox, Zen Browser, Google Chrome, Brave, Chromium)
 [9]  Gaming Suite (Steam, Wine, MangoHud, GameMode, Gamescope, Lutris, Heroic, ProtonUp-Qt, vkBasalt)
-[10] System Performance Tweaks (ZRAM + Zen/Liquorix kernel + GRUB Auto + GameMode)
-[11] Preset Menu (Gaming Setup / Creator Setup / Minimal Nerd Setup)
+[10] System Performance Tweaks (ZRAM + Liquorix/Zen kernel + GRUB Auto + GameMode)
+[11] Preset Menu (Gaming / Creator / Minimal Nerd)
 [12] Do EVERYTHING (1–11)
 [0]  Exit
 MENU
-  echo
-  read -rp "Choose an option: " choice
-  case "${choice:-}" in
-    1) install_base ;;
-    2) install_gpu ;;
-    3) install_vm_tools ;;
-    4) backup_existing; ensure_config; ensure_xinit; copy_wallpaper ;;
-    5) enable_tty_autologin ;;
-    6) install_extras; setup_fish ;;
-    7) install_nerd_pack ;;
-    8) apps_menu ;;
-    9) gaming_suite_menu ;;
-    10) performance_menu ;;
-    11) presets_menu ;;
-    12) install_base; install_gpu; install_vm_tools; backup_existing; ensure_config; ensure_xinit; copy_wallpaper; install_extras; setup_fish; install_nerd_pack; apps_menu; gaming_suite_menu; performance_menu ;;
-    0) exit 0 ;;
-    *) echo "Invalid choice." ;;
-  esac
-  echo
-  confirm "Return to menu?" && main_menu || true
+    echo
+    read -rp "Choose (0=Exit): " choice
+    case "${choice,,}" in
+      1)  install_base ;;
+      2)  install_gpu ;;
+      3)  install_vm_tools ;;
+      4)  backup_existing; ensure_config; patch_rc; ensure_xinit; copy_wallpaper ;;
+      5)  enable_tty_autologin ;;
+      6)  install_extras; setup_fish ;;
+      7)  install_nerd_pack ;;
+      8)  apps_menu ;;
+      9)  gaming_suite_menu ;;
+      10) performance_menu ;;
+      11) presets_menu ;;
+      12) install_base; install_gpu; install_vm_tools; backup_existing; ensure_config; patch_rc; ensure_xinit; copy_wallpaper; install_extras; setup_fish; install_nerd_pack; apps_menu; gaming_suite_menu; performance_menu ;;
+      0|q|quit|exit) echo "Bye!"; break ;;
+      *) echo "Invalid choice."; sleep 1 ;;
+    esac
+  done
 }
 
 # ---------------- Run ----------------
