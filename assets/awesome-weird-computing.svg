@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="340" viewBox="0 0 1280 340" role="img" aria-labelledby="title desc">
+  <title id="title">Awesome Weird Computing</title>
+  <desc id="desc">A technical field guide to hardware, kernels and improbable machines. Why does this even run?</desc>
+  <rect width="1280" height="340" rx="16" fill="#101820"/>
+  <path d="M940 0v64h84v55h98v65h158M1040 0v34h80v46h160M1280 272h-160v-54h-76v-61h-104v183" fill="none" stroke="#25424a" stroke-width="3"/>
+  <g fill="#7adbbd"><circle cx="940" cy="64" r="5"/><circle cx="1122" cy="184" r="5"/><circle cx="1044" cy="218" r="5"/></g>
+  <rect x="48" y="46" width="5" height="247" fill="#7adbbd"/>
+  <text x="78" y="73" fill="#7adbbd" font-family="monospace" font-size="17" letter-spacing="3">A FIELD GUIDE TO IMPROBABLE MACHINES</text>
+  <text x="76" y="144" fill="#f2f6f4" font-family="sans-serif" font-size="55" font-weight="700">Awesome Weird Computing</text>
+  <text x="78" y="196" fill="#c4d2d6" font-family="monospace" font-size="22">hardware / kernels / firmware / things that boot anyway</text>
+  <text x="78" y="273" fill="#efc477" font-family="monospace" font-size="25">&gt; Why does this even run?</text>
+  <rect x="477" y="251" width="14" height="26" fill="#efc477"/>
+</svg>
